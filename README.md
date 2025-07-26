@@ -2,6 +2,8 @@
 
 This project is a web application that allows you to generate a video storyboard from a topic. It uses a sophisticated AI agent to research the topic, write a script, and find relevant YouTube clips.
 
+[![Watch a demo of ClipHunt Agent](https://img.youtube.com/vi/1rl1_QeESb8/0.jpg)](https://www.youtube.com/watch?v=1rl1_QeESb8)
+
 ## Project Structure
 
 The project is divided into two main parts:
