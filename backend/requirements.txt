@@ -1,0 +1,10 @@
+flask==3.0.0
+flask-cors==4.0.0 
+langgraph
+langgraph-prebuilt
+langchain-core
+langchain-community
+langgraph-cli[inmem]
+python-dotenv
+langchain-google-genai
+tavily-python

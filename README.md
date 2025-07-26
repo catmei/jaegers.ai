@@ -1,42 +1,71 @@
-# Agentic AI App Hackathon Template
+# ClipHunt Agent
 
-Welcome! This repository is your starting point for the **Agentic AI App Hackathon**. It includes:
+This project is a web application that allows you to generate a video storyboard from a topic. It uses a sophisticated AI agent to research the topic, write a script, and find relevant YouTube clips.
 
-- A consistent folder structure  
-- An environment spec (`environment.yml` or `Dockerfile`)  
-- Documentation placeholders to explain your design and demo
+## Project Structure
 
-## 📋 Submission Checklist
+The project is divided into two main parts:
 
-- [ ] All code in `src/` runs without errors  
-- [ ] `ARCHITECTURE.md` contains a clear diagram sketch and explanation  
-- [ ] `EXPLANATION.md` covers planning, tool use, memory, and limitations  
-- [ ] `DEMO.md` links to a 3–5 min video with timestamped highlights  
+-   `vfront`: A [Next.js](https://nextjs.org/) application that provides the user interface.
+-   `backend`: A [Flask](https://flask.palletsprojects.com/) application that exposes the AI agent as a REST API.
+
+## Getting Started
+
+### Prerequisites
+
+-   [Node.js](https://nodejs.org/) (v20 or later)
+-   [Python](https://www.python.org/) (v3.9 or later)
+-   `pip`
+-   `npm` (or `yarn` or `pnpm`)
+
+### Backend Setup
+
+1.  **Navigate to the backend directory:**
+    ```bash
+    cd backend
+    ```
+
+2.  **Create and activate a virtual environment (recommended):**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+    ```
+
+3.  **Install the Python dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Create a `.env` file in the `backend` directory and add your API keys:**
 
 
-## 🚀 Getting Started
+5.  **Run the backend server:**
+    ```bash
+    python api_server.py
+    ```
+    The backend server will be running at `http://localhost:5001`.
 
-1. **Clone / Fork** this template.  Very Important. Fork Name MUST be the same name as the teamn name
+### Frontend Setup
 
+1.  **Navigate to the frontend directory:**
+    ```bash
+    cd vfront
+    ```
 
-## 📂 Folder Layout
+2.  **Install the Node.js dependencies:**
+    ```bash
+    npm install
+    ```
 
-![Folder Layout Diagram](images/folder-githb.png)
+3.  **Run the frontend development server:**
+    ```bash
+    npm run dev
+    ```
+    The frontend application will be running at `http://localhost:3000`.
 
+## Usage
 
-
-## 🏅 Judging Criteria
-
-- **Technical Excellence **  
-  This criterion evaluates the robustness, functionality, and overall quality of the technical implementation. Judges will assess the code's efficiency, the absence of critical bugs, and the successful execution of the project's core features.
-
-- **Solution Architecture & Documentation **  
-  This focuses on the clarity, maintainability, and thoughtful design of the project's architecture. This includes assessing the organization and readability of the codebase, as well as the comprehensiveness and conciseness of documentation (e.g., GitHub README, inline comments) that enables others to understand and potentially reproduce or extend the solution.
-
-- **Innovative Gemini Integration **  
-  This criterion specifically assesses how effectively and creatively the Google Gemini API has been incorporated into the solution. Judges will look for novel applications, efficient use of Gemini's capabilities, and the impact it has on the project's functionality or user experience. You are welcome to use additional Google products.
-
-- **Societal Impact & Novelty **  
-  This evaluates the project's potential to address a meaningful problem, contribute positively to society, or offer a genuinely innovative and unique solution. Judges will consider the originality of the idea, its potential real‑world applicability, and its ability to solve a challenge in a new or impactful way.
-
-
+1.  Make sure both the backend and frontend servers are running.
+2.  Open your browser and navigate to `http://localhost:3000`.
+3.  Enter a topic in the input field and click "Generate Video Plan".
+4.  The application will then display a video storyboard with clips from YouTube. 
