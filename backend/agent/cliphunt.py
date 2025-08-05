@@ -9,13 +9,13 @@ from google import genai
 from google.genai import types
 import os
 import requests
-import json
 from enum import Enum
 from googleapiclient.discovery import build
-from .debug import debug
+
+
 load_dotenv()
 # LLM
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
 
 # Tavily client
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -460,7 +460,7 @@ def create_ideators(state: GeneratedIdeatorState):
     """ Create ideators """
     topic = state['topic']
     max_ideators = state['max_ideators']
-        
+    
     # Enforce structured output
     structured_llm = llm.with_structured_output(Perspectives)
 
@@ -483,9 +483,7 @@ def conduct_research(state: GeneratedIdeatorState):
     # Structured LLM for generating search queries
     query_llm = llm.with_structured_output(SearchQuery)
     
-    for ideator in ideators:
-        print(f"🔍 {ideator.name} is conducting research...")
-        
+    for ideator in ideators:        
         # Generate search query based on persona
         query_prompt = search_query_instructions.format(
             persona=ideator.persona,
@@ -496,18 +494,10 @@ def conduct_research(state: GeneratedIdeatorState):
             SystemMessage(content=query_prompt),
             HumanMessage(content="Generate your search query.")
         ])
-        
-        # print(f"   Search query: {search_query.query}")
-        # print(f"   Chosen search method: {search_query.search_method.value}")
-        # print(f"   Reasoning: {search_query.reasoning}")
-        
+    
         # Conduct web search
         search_results = execute_search(search_query.query, search_query.search_method)
-        
-        # print(f"🌐 Search Results Found:")
-        # print(search_results)
-        # print("\n" + "-"*50 + "\n")
-        
+    
         # Generate insights from search results
         insights_prompt = f"""
         As {ideator.name} ({ideator.role}), analyze these search results and extract key insights that are most relevant to your expertise and interests for creating short-form video content about "{topic}".
@@ -545,9 +535,7 @@ def conduct_research(state: GeneratedIdeatorState):
 def create_scriptor(state: GeneratedIdeatorState):
     """Create a specialized scriptor for writing the video script"""
     topic = state['topic']
-    
-    print(f"👨‍💻 Creating a specialized scriptor for: {topic}")
-    
+        
     # Enforce structured output
     structured_llm = llm.with_structured_output(Scriptor)
     
@@ -560,11 +548,6 @@ def create_scriptor(state: GeneratedIdeatorState):
         HumanMessage(content="Generate the scriptor persona.")
     ])
     
-    # print(f"✅ Created scriptor: {scriptor.name}")
-    # print(f"   Specialization: {scriptor.specialization}")
-    # print(f"   Writing Style: {scriptor.writing_style}")
-    # print()
-    
     return {"scriptor": scriptor}
 
 
@@ -573,10 +556,6 @@ def create_script(state: GeneratedIdeatorState):
     topic = state['topic']
     research_results = state['research_results']
     scriptor = state['scriptor']
-    
-    # print(f"✍️ {scriptor.name} is writing the script...")
-    # print(f"   Using their expertise in: {scriptor.specialization}")
-    # print()
     
     # Summarize all research insights
     research_summary = ""
@@ -687,118 +666,12 @@ Timestamped Lines to Analyze:
     return {"keyword_extraction": keyword_extraction}
 
 
-def search_content_by_keywords_gemini(state: GeneratedIdeatorState):
-    """Search for content using extracted keywords by timestamp structure, focusing on YouTube with Gemini"""
-    keyword_extraction = state['keyword_extraction']
-    topic = state['topic']
-    
-    print(f"🔍 Searching YouTube content by timestamp using Google Gemini...")
-    print()
-    
-    # Define the grounding tool
-    grounding_tool = types.Tool(
-        google_search=types.GoogleSearch()
-    )
-    
-    # Configure generation settings
-    config = types.GenerateContentConfig(
-        tools=[grounding_tool]
-    )
-    
-    search_results = []
-    
-    # Process each timestamp separately
-    for timestamp_keyword in keyword_extraction.timestamp_keywords:
-        timestamp = timestamp_keyword.timestamp
-        keywords = timestamp_keyword.keywords
-        
-        # Combine keywords with + for search
-        combined_keywords = "+".join(keywords)
-        
-        print(f"🔎 Searching for timestamp {timestamp}")
-        print(f"   Keywords: {', '.join(keywords)}")
-        print(f"   Combined query: {combined_keywords}")
-        
-        try:
-            # Create a YouTube-focused search query
-            search_query = f"Search YouTube for videos about '{combined_keywords}' related to '{topic}'. You must provide YouTube URL links. Find YouTube videos, channels, and playlists that contain content about {', '.join(keywords)}. Focus specifically on YouTube results only."
-            
-            # Make the request using Google Gemini
-            response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=search_query,
-                config=config,
-            )
-            
-            # Parse the response text to extract information
-            response_text = response.text
-            print(f"   Gemini response preview:")
-            print(f"   {response_text[:500]}...")  # Show first 500 chars
-            
-            # Extract YouTube URLs specifically
-            import re
-            youtube_pattern = r'https?://(?:www\.)?(?:youtube\.com|youtu\.be)/[^\s\)"\']+'
-            found_youtube_urls = re.findall(youtube_pattern, response_text)
-            
-            # Also look for general URLs but prioritize YouTube
-            general_url_pattern = r'https?://[^\s\)"\']+'
-            all_urls = re.findall(general_url_pattern, response_text)
-            
-            # Filter to prioritize YouTube URLs
-            final_urls = found_youtube_urls + [url for url in all_urls if 'youtube.com' in url or 'youtu.be' in url]
-            # Remove duplicates while preserving order
-            final_urls = list(dict.fromkeys(final_urls))
-            
-            # Create a descriptive title
-            content_title = f"YouTube results for {timestamp} - Found {len(final_urls)} videos/resources"
-            
-            # Create search result
-            search_result = ContentSearchResult(
-                title=content_title,
-                timestamp=timestamp,
-                keywords=keywords,
-                search_query=combined_keywords,
-                links=final_urls[:5]  # Limit to top 5 links
-            )
-            
-            search_results.append(search_result)
-            
-            print(f"   Found {len(final_urls)} YouTube URLs")
-            if final_urls:
-                for i, url in enumerate(final_urls[:3]):  # Show first 3 URLs
-                    print(f"     {i+1}. {url}")
-            
-        except Exception as e:
-            print(f"   Error searching for timestamp {timestamp}: {str(e)}")
-            # Create a fallback result even if search fails
-            search_result = ContentSearchResult(
-                title=f"YouTube search failed for {timestamp}",
-                timestamp=timestamp,
-                keywords=keywords,
-                search_query=combined_keywords,
-                links=[]
-            )
-            search_results.append(search_result)
-        
-        print()  # Add space between timestamps
-    
-    content_search_results = ContentSearchResults(search_results=search_results)
-    
-    print(f"✅ YouTube search completed for {len(keyword_extraction.timestamp_keywords)} timestamps")
-    print()
-    
-    return {"content_search_results": content_search_results}
-
-
 def search_youtube_api(state: GeneratedIdeatorState):
     """Search for content using YouTube API with extracted keywords by timestamp structure"""
     keyword_extraction = state['keyword_extraction']
     topic = state['topic']
     
-    debug.print_node_start("search_youtube_api", "Searching YouTube content using YouTube API...")
-    
     if not youtube:
-        debug.print_error("YouTube API not available - missing YOUTUBE_API_KEY")
         return {"content_search_results": ContentSearchResults(search_results=[])}
     
     search_results = []
@@ -810,9 +683,7 @@ def search_youtube_api(state: GeneratedIdeatorState):
         
         # Combine keywords for search
         search_query = " ".join(keywords) + " " + topic
-        
-        debug.print_search_progress(timestamp, keywords, search_query)
-        
+                
         try:
             # Search YouTube using the API
             search_response = youtube.search().list(
@@ -848,9 +719,7 @@ def search_youtube_api(state: GeneratedIdeatorState):
             
             search_results.append(search_result)
             
-        except Exception as e:
-            debug.print_error(f"YouTube API search failed for timestamp {timestamp}: {str(e)}")
-            # Create a fallback result even if search fails
+        except Exception as e:            # Create a fallback result even if search fails
             search_result = ContentSearchResult(
                 title=f"YouTube API search failed for {timestamp}",
                 timestamp=timestamp,
@@ -860,21 +729,14 @@ def search_youtube_api(state: GeneratedIdeatorState):
             )
             search_results.append(search_result)
     
-    content_search_results = ContentSearchResults(search_results=search_results)
-    
-    debug.print_completion("youtube_api_search", len(keyword_extraction.timestamp_keywords), "timestamps")
-    
+    content_search_results = ContentSearchResults(search_results=search_results)    
     return {"content_search_results": content_search_results}
 
 
 def understand_youtube_videos(state: GeneratedIdeatorState):
     """Analyze YouTube videos using Gemini's understanding API with extracted keywords"""
     content_search_results = state['content_search_results']
-    keyword_extraction = state['keyword_extraction']
     topic = state['topic']
-    
-    debug.print_node_start("understand_youtube_videos", "Analyzing YouTube videos using Gemini Understanding API...")
-    debug.print_warning("Processing only the FIRST segment to save time...")
     
     understanding_results = []
     
@@ -887,13 +749,11 @@ def understand_youtube_videos(state: GeneratedIdeatorState):
         # Get the first YouTube URL for analysis
         youtube_url = None
         if search_result.links:
-            youtube_url = search_result.links[0]
+            youtube_url = search_result.links[0] # Only first video
         
         if not youtube_url:
-            debug.print_warning(f"No YouTube URL found for timestamp {timestamp}, skipping...")
-        else:
-            debug.print_video_analysis_progress(timestamp, keywords, youtube_url)
-            
+            print(f"No YouTube URL found for timestamp {timestamp}, skipping...")
+        else:            
             try:
                 import time
                 start_time = time.time()
@@ -920,9 +780,7 @@ def understand_youtube_videos(state: GeneratedIdeatorState):
                 processing_time = end_time - start_time
                 
                 analysis_result = response.text
-                
-                debug.print_analysis_complete(processing_time, analysis_result)
-                
+                                
                 # Create understanding result
                 understanding_result = VideoUnderstandingResult(
                     timestamp=timestamp,
@@ -935,9 +793,7 @@ def understand_youtube_videos(state: GeneratedIdeatorState):
                 
                 understanding_results.append(understanding_result)
                 
-            except Exception as e:
-                debug.print_error(f"Video analysis failed for timestamp {timestamp}: {str(e)}")
-                # Create a fallback result even if analysis fails
+            except Exception as e:                # Create a fallback result even if analysis fails
                 understanding_result = VideoUnderstandingResult(
                     timestamp=timestamp,
                     keywords=keywords,
@@ -948,19 +804,13 @@ def understand_youtube_videos(state: GeneratedIdeatorState):
                 )
                 understanding_results.append(understanding_result)
     
-    video_understanding_results = VideoUnderstandingResults(understanding_results=understanding_results)
-    
-    debug.print_completion("video_understanding", len(understanding_results), "videos")
-    
+    video_understanding_results = VideoUnderstandingResults(understanding_results=understanding_results)    
     return {"video_understanding_results": video_understanding_results}
 
 
 def parse_video_analysis(state: GeneratedIdeatorState):
     """Parse video understanding results to extract individual video segments with timestamps"""
     video_understanding_results = state['video_understanding_results']
-    
-    debug.print_node_start("parse_video_analysis", "Parsing video analysis results to extract individual segments...")
-    
     parsed_results = []
     
     for understanding_result in video_understanding_results.understanding_results:
@@ -1013,12 +863,8 @@ def parse_video_analysis(state: GeneratedIdeatorState):
             )
             
             parsed_results.append(parsed_analysis)
-            
-            print(f"✅ Parsed {len(video_segments)} segments for {understanding_result.timestamp}")
-            
+                        
         except json.JSONDecodeError as e:
-            debug.print_error(f"Failed to parse JSON for {understanding_result.timestamp}: {str(e)}")
-            print(f"   Raw analysis text: {understanding_result.analysis_result[:500]}...")
             # Create a fallback with no segments
             parsed_analysis = ParsedVideoAnalysis(
                 script_timestamp=understanding_result.timestamp,
@@ -1029,9 +875,7 @@ def parse_video_analysis(state: GeneratedIdeatorState):
             )
             parsed_results.append(parsed_analysis)
         
-        except Exception as e:
-            debug.print_error(f"Error parsing analysis for {understanding_result.timestamp}: {str(e)}")
-            # Create a fallback with no segments
+        except Exception as e:            # Create a fallback with no segments
             parsed_analysis = ParsedVideoAnalysis(
                 script_timestamp=understanding_result.timestamp,
                 keywords=understanding_result.keywords,
@@ -1042,9 +886,7 @@ def parse_video_analysis(state: GeneratedIdeatorState):
             parsed_results.append(parsed_analysis)
     
     parsed_video_analysis = ParsedVideoAnalysisResults(parsed_results=parsed_results)
-    
-    debug.print_completion("parse_video_analysis", len(parsed_results), "video analyses")
-    
+        
     return {"parsed_video_analysis": parsed_video_analysis}
 
 
@@ -1055,9 +897,7 @@ def generate_final_structure(state: GeneratedIdeatorState):
     content_search_results = state['content_search_results']
     parsed_video_analysis = state['parsed_video_analysis']
     topic = state['topic']
-    
-    debug.print_node_start("generate_final_structure", "Generating final structured video JSON...")
-    
+        
     # Create segments based on actual data
     segments = []
     
@@ -1120,65 +960,37 @@ def generate_final_structure(state: GeneratedIdeatorState):
         style=["informative", "engaging", "dynamic"],
         segments=segments
     )
-    
-    debug.print_completion("final_video_structure")
-    
+        
     return {"final_video_structure": final_structure}
 
 
-if __name__ == "__main__":
-    # Graph
-    workflow = StateGraph(GeneratedIdeatorState)
+# Graph
+workflow = StateGraph(GeneratedIdeatorState)
 
-    # Add nodes
-    workflow.add_node("create_ideators", create_ideators)
-    workflow.add_node("conduct_research", conduct_research)
-    workflow.add_node("create_scriptor", create_scriptor)
-    workflow.add_node("create_script", create_script)
-    workflow.add_node("extract_keywords", extract_keywords)
-    workflow.add_node("search_content_by_keywords", search_content_by_keywords_gemini)
-    workflow.add_node("search_youtube_api", search_youtube_api)
-    workflow.add_node("understand_youtube_videos", understand_youtube_videos)
-    workflow.add_node("parse_video_analysis", parse_video_analysis)
-    workflow.add_node("generate_final_structure", generate_final_structure)
+# Add nodes
+workflow.add_node("create_ideators", create_ideators)
+workflow.add_node("conduct_research", conduct_research)
+workflow.add_node("create_scriptor", create_scriptor)
+workflow.add_node("create_script", create_script)
+workflow.add_node("extract_keywords", extract_keywords)
+workflow.add_node("search_youtube_api", search_youtube_api)
+workflow.add_node("understand_youtube_videos", understand_youtube_videos)
+workflow.add_node("parse_video_analysis", parse_video_analysis)
+workflow.add_node("generate_final_structure", generate_final_structure)
 
-    # Set entry point and edges
-    workflow.set_entry_point("create_ideators")
-    workflow.add_edge("create_ideators", "conduct_research")
-    workflow.add_edge("conduct_research", "create_scriptor")
-    workflow.add_edge("create_scriptor", "create_script")
-    workflow.add_edge("create_script", "extract_keywords")
-    workflow.add_edge("extract_keywords", "search_youtube_api")
-    workflow.add_edge("search_youtube_api", "understand_youtube_videos")
-    workflow.add_edge("understand_youtube_videos", "parse_video_analysis")
-    workflow.add_edge("parse_video_analysis", "generate_final_structure")
-    workflow.add_edge("generate_final_structure", END)
+# Set entry point and edges
+workflow.set_entry_point("create_ideators")
+workflow.add_edge("create_ideators", "conduct_research")
+workflow.add_edge("conduct_research", "create_scriptor")
+workflow.add_edge("create_scriptor", "create_script")
+workflow.add_edge("create_script", "extract_keywords")
+workflow.add_edge("extract_keywords", "search_youtube_api")
+workflow.add_edge("search_youtube_api", "understand_youtube_videos")
+workflow.add_edge("understand_youtube_videos", "parse_video_analysis")
+workflow.add_edge("parse_video_analysis", "generate_final_structure")
+workflow.add_edge("generate_final_structure", END)
 
-    # Compile
-    graph = workflow.compile()
+# Compile
+graph = workflow.compile()
 
-    # Input
-    max_ideators = 1
-    topic = "lebron james and the lakers"
-
-    # Run the graph
-    for event in graph.stream({"topic": topic, "max_ideators": max_ideators}, stream_mode="values"):
-        # Review final script
-        final_script = event.get('final_script')
-        if final_script:
-            debug.print_script(final_script)
-
-        # Review content search results
-        content_search_results = event.get('content_search_results')
-        # if content_search_results:
-        #     debug.print_search_results(content_search_results)
-
-        # Review video understanding results
-        video_understanding_results = event.get('video_understanding_results')
-        if video_understanding_results:
-            debug.print_video_understanding(video_understanding_results)
-
-        # Review final video structure
-        final_video_structure = event.get('final_video_structure')
-        if final_video_structure:
-            debug.print_final_structure(final_video_structure)
+# Reference Input: initial_state = {"topic": "lebron james and the lakers", "max_ideators": 1}

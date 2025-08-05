@@ -64,10 +64,15 @@ export default function HomePage() {
 
     try {
       // Fetch mock data from public folder
-      const response = await fetch('/mockData.json')
+      const response = await fetch('http://localhost:5001/generate-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ topic }),
+      });
       const data = await response.json()
       
-      setTimeout(() => {
         setVideoData(data)
         setIsLoading(false)
         // Collapse all concept segments by default
@@ -80,7 +85,6 @@ export default function HomePage() {
           })
         })
         setCollapsedConcepts(conceptIndices)
-      }, 2000)
     } catch (error) {
       console.error('Error loading mock data:', error)
       setIsLoading(false)

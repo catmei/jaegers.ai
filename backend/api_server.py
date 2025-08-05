@@ -1,48 +1,14 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import requests
 import json
-from agent.agent import (
-    StateGraph, GeneratedIdeatorState, END,
-    create_ideators, conduct_research, create_scriptor, create_script,
-    extract_keywords, search_youtube_api, understand_youtube_videos,
-    parse_video_analysis, generate_final_structure
-)
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
-
-def create_video_workflow():
-    """Create and compile the video generation workflow"""
-    workflow = StateGraph(GeneratedIdeatorState)
-
-    # Add nodes
-    workflow.add_node("create_ideators", create_ideators)
-    workflow.add_node("conduct_research", conduct_research)
-    workflow.add_node("create_scriptor", create_scriptor)
-    workflow.add_node("create_script", create_script)
-    workflow.add_node("extract_keywords", extract_keywords)
-    workflow.add_node("search_youtube_api", search_youtube_api)
-    workflow.add_node("understand_youtube_videos", understand_youtube_videos)
-    workflow.add_node("parse_video_analysis", parse_video_analysis)
-    workflow.add_node("generate_final_structure", generate_final_structure)
-
-    # Set entry point and edges
-    workflow.set_entry_point("create_ideators")
-    workflow.add_edge("create_ideators", "conduct_research")
-    workflow.add_edge("conduct_research", "create_scriptor")
-    workflow.add_edge("create_scriptor", "create_script")
-    workflow.add_edge("create_script", "extract_keywords")
-    workflow.add_edge("extract_keywords", "search_youtube_api")
-    workflow.add_edge("search_youtube_api", "understand_youtube_videos")
-    workflow.add_edge("understand_youtube_videos", "parse_video_analysis")
-    workflow.add_edge("parse_video_analysis", "generate_final_structure")
-    workflow.add_edge("generate_final_structure", END)
-
-    return workflow.compile()
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000"}})
 
 @app.route('/generate-video', methods=['POST'])
 def generate_video():
-    """Generate video structure from topic"""
+    """Generate video structure from topic via LangGraph dev API"""
     try:
         # Get topic from request
         data = request.get_json()
@@ -55,24 +21,82 @@ def generate_video():
         print(f"🎬 Processing topic: {topic}")
         print(f"📊 Max ideators: {max_ideators}")
         
-        # Create and run the workflow
-        graph = create_video_workflow()
+        # LangGraph dev API endpoint
+        langgraph_dev_url = "http://localhost:2024"
         
-        # Run the graph and collect final result
+        # Step 1: Create a thread
+        thread_url = f"{langgraph_dev_url}/threads"
+        thread_response = requests.post(thread_url, json={"metadata": {}})
+        
+        if thread_response.status_code != 200:
+            error_msg = f"Failed to create thread: {thread_response.status_code} - {thread_response.text}"
+            print(f"❌ {error_msg}")
+            return jsonify({'error': error_msg}), 500
+        
+        thread_id = thread_response.json()["thread_id"]
+        print(f"🧵 Created thread: {thread_id}")
+        
+        # Step 2: Prepare the input for the LangGraph dev API
+        input_data = {
+            "topic": topic,
+            "max_ideators": max_ideators
+        }
+        
+        # Step 3: Call LangGraph dev API to stream the graph execution
+        stream_url = f"{langgraph_dev_url}/threads/{thread_id}/runs/stream"
+        
+        payload = {
+            "assistant_id": "ClipHunt",
+            "input": input_data,
+            "stream_mode": ["values"]
+        }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream"
+        }
+        
+        print(f"🚀 Calling LangGraph dev API at {stream_url}")
+        
+        # Step 4: Make streaming request to LangGraph dev API
         final_result = None
-        for event in graph.stream({"topic": topic, "max_ideators": max_ideators}, stream_mode="values"):
-            final_video_structure = event.get('final_video_structure')
-            if final_video_structure:
-                final_result = final_video_structure
+        with requests.post(stream_url, json=payload, headers=headers, stream=True) as response:
+            if response.status_code != 200:
+                error_msg = f"LangGraph dev API error: {response.status_code} - {response.text}"
+                print(f"❌ {error_msg}")
+                return jsonify({'error': error_msg}), 500
+            
+            # Process streaming response (SSE format)
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8')
+                    # SSE format: "data: {json_data}"
+                    if line_str.startswith('data: '):
+                        try:
+                            data_str = line_str[6:]  # Remove "data: " prefix
+                            if data_str.strip():
+                                event_data = json.loads(data_str)
+                                
+                                # Look for the final video structure in the event data
+                                if isinstance(event_data, dict):
+                                    final_video_structure = event_data.get('final_video_structure')
+                                    if final_video_structure:
+                                        final_result = final_video_structure
+                                        print(f"📹 Received final video structure")
+                        except json.JSONDecodeError:
+                            # Skip lines that aren't valid JSON
+                            continue
         
         if final_result is None:
-            return jsonify({'error': 'Failed to generate video structure'}), 500
+            return jsonify({'error': 'Failed to generate video structure - no final result received'}), 500
         
-        # Convert Pydantic model to dict for JSON serialization
-        result_dict = final_result.model_dump()
-        print(result_dict)
         print(f"✅ Successfully generated video structure for: {topic}")
-        return jsonify(result_dict)
+        return jsonify(final_result)
+        
+    except requests.exceptions.ConnectionError:
+        error_msg = "Could not connect to LangGraph dev server. Make sure 'langgraph dev' is running on port 2024."
+        print(f"❌ {error_msg}")
+        return jsonify({'error': error_msg}), 503
         
     except Exception as e:
         print(f"❌ Error processing request: {str(e)}")
@@ -87,24 +111,20 @@ def health_check():
 def root():
     """Root endpoint with API information"""
     return jsonify({
-        'message': 'Video Generation API',
+        'message': 'Video Generation API (LangGraph Dev Wrapper)',
+        'description': 'This API wraps the LangGraph dev server to enable LangSmith tracking',
+        'prerequisites': 'Make sure LangGraph dev server is running on port 2024',
         'endpoints': {
-            'POST /generate-video': 'Generate video structure from topic',
+            'POST /generate-video': 'Generate video structure from topic via LangGraph dev API',
             'GET /health': 'Health check',
             'GET /': 'This information'
         },
         'example_usage': {
-            'curl': 'curl -X POST http://localhost:5001/generate-video -H "Content-Type: application/json" -d \'{"topic": "lebron james and the lakers"}\''
+            'curl': 'curl -X POST http://localhost:5001/generate-video -H "Content-Type: application/json" -d \'{"topic": "lebron james and the lakers"}\'',
+            'setup': [
+                '1. Start LangGraph dev: cd backend/agent && langgraph dev',
+                '2. Start this API: python backend/api_server.py',
+                '3. Make requests to this API which will forward to LangGraph dev'
+            ]
         }
     })
-
-if __name__ == '__main__':
-    print("🚀 Starting Video Generation API Server...")
-    print("📍 Server will be available at: http://localhost:5001")
-    print("🔍 Health check: http://localhost:5001/health")
-    print("📋 API info: http://localhost:5001/")
-    print("\n💡 Example usage:")
-    print('curl -X POST http://localhost:5001/generate-video -H "Content-Type: application/json" -d \'{"topic": "lebron james and the lakers"}\'')
-    print()
-    
-    app.run(host='0.0.0.0', port=5001, debug=True) 
