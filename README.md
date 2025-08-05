@@ -140,26 +140,26 @@ The system is designed as a multi-agent workflow that takes a user-provided topi
 
 ```mermaid
 graph TD
-    A[Frontend<br/>Next.js<br/>:3000] --> B[Flask API Wrapper<br/>:5001];
-    B --> C[LangGraph Dev Server<br/>:2024];
-    C --> D[Agent Graph Execution];
-    D --> E(1. Create Ideators);
-    E --> F{Ideator 1};
-    E --> G{Ideator 2};
-    E --> H{Ideator N};
-    subgraph "2. Web Research"
-        F --> I[Web Search<br/>TAVILY, DUCKDUCKGO, etc.];
-        G --> I;
-        H --> I;
+    A["Frontend<br/>Next.js<br/>Port 3000"] --> B["Flask API Wrapper<br/>Port 5001"]
+    B --> C["LangGraph Dev Server<br/>Port 2024"]
+    C --> D["Agent Graph Execution"]
+    D --> E["Create Ideators"]
+    E --> F["Ideator 1"]
+    E --> G["Ideator 2"] 
+    E --> H["Ideator N"]
+    subgraph Research["Web Research"]
+        F --> I["Web Search<br/>TAVILY, DUCKDUCKGO"]
+        G --> I
+        H --> I
     end
-    I --> J(3. Create Scriptor);
-    J --> K(4. Generate Script);
-    K --> L(5. Extract Keywords);
-    L --> M(6. YouTube API Search);
-    M --> N(7. Video Understanding<br/>Gemini Analysis);
-    N --> O(8. Parse Video Analysis);
-    O --> P(9. Final Structure<br/>Organizer);
-    C -.-> Q[LangSmith<br/>Tracking & Observability];
+    I --> J["Create Scriptor"]
+    J --> K["Generate Script"]
+    K --> L["Extract Keywords"]
+    L --> M["YouTube API Search"]
+    M --> N["Video Understanding<br/>Gemini Analysis"]
+    N --> O["Parse Video Analysis"]
+    O --> P["Final Structure<br/>Organizer"]
+    C -.-> Q["LangSmith<br/>Tracking & Observability"]
 ```
 
 The agent follows a structured workflow orchestrated by `langgraph` to generate a video plan from a given topic. The workflow consists of the following sequential steps:
