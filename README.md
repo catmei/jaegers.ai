@@ -143,21 +143,23 @@ graph TD
     A[Frontend<br/>Next.js<br/>:3000] --> B[Flask API Wrapper<br/>:5001];
     B --> C[LangGraph Dev Server<br/>:2024];
     C --> D[Agent Graph Execution];
-    D --> E(Ideators Creator Agent);
-    E --> F{Ideator};
-    E --> G{Ideator};
-    E --> H{Ideator};
-    subgraph Web Research
-        F --> I[Web Search <br/> TAVILY, DUCKDUCKGO, etc.];
+    D --> E(1. Create Ideators);
+    E --> F{Ideator 1};
+    E --> G{Ideator 2};
+    E --> H{Ideator N};
+    subgraph "2. Web Research"
+        F --> I[Web Search<br/>TAVILY, DUCKDUCKGO, etc.];
         G --> I;
         H --> I;
     end
-    I --> J(Scriptor);
-    J --> K(Search Keyword Collector/Search);
-    K -- YouTube API --> L[YouTube Search];
-    K --> M(Video Understanding Agent);
-    M --> N(Final Structure Organizer);
-    C -.-> O[LangSmith<br/>Tracking & Observability];
+    I --> J(3. Create Scriptor);
+    J --> K(4. Generate Script);
+    K --> L(5. Extract Keywords);
+    L --> M(6. YouTube API Search);
+    M --> N(7. Video Understanding<br/>Gemini Analysis);
+    N --> O(8. Parse Video Analysis);
+    O --> P(9. Final Structure<br/>Organizer);
+    C -.-> Q[LangSmith<br/>Tracking & Observability];
 ```
 
 The agent follows a structured workflow orchestrated by `langgraph` to generate a video plan from a given topic. The workflow consists of the following sequential steps:
@@ -168,13 +170,19 @@ The agent follows a structured workflow orchestrated by `langgraph` to generate 
 
 3.  **Ideator Agents (`conduct_research`)**: The ideators work in parallel to conduct research on the given topic based on their assigned personas. They use various web search tools like Tavily and DuckDuckGo to gather relevant information and identify compelling narratives and media sources. The output is a collection of research insights from multiple perspectives.
 
-4.  **Scriptor Agent (`create_script`)**: The research insights from all ideators are passed to the Scriptor agent. This specialized agent synthesizes the gathered information into a coherent and engaging video script, outlining scenes, dialogue, and visual cues.
+4.  **Scriptor Creator (`create_scriptor`)**: This step creates a specialized video script writer persona. The scriptor is assigned specific expertise in viral short-form video content creation and is tailored to work well with the given topic and research insights.
 
-5.  **Search Keyword Collector/Search (`extract_keywords` & `search_youtube_api`)**: This component analyzes the generated script to extract relevant keywords, then uses these keywords to query the YouTube API, searching for video clips that match the script's content.
+5.  **Script Generation (`create_script`)**: The research insights from all ideators are passed to the Scriptor agent created in the previous step. This specialized agent synthesizes the gathered information into a coherent and engaging video script, outlining scenes, dialogue, and visual cues with specific timing for short-form content.
 
-6.  **Video Understanding Agent (`understand_youtube_videos`)**: The list of YouTube video URLs from the previous step is passed to this agent. It analyzes the content of these videos to determine their relevance and identify the most suitable segments.
+6.  **Keyword Extraction (`extract_keywords`)**: This component analyzes the generated script to extract relevant keywords from each timestamped section. These keywords capture primary visual subjects, key actions, concepts, and entities mentioned in the script.
 
-7.  **Final Structure Organizer (`generate_final_structure`)**: This is the final step in the workflow. This agent takes the script and the analyzed video clips and organizes them into a final, structured video plan. The plan is then returned to the frontend as a JSON object to be displayed as an interactive storyboard.
+7.  **YouTube Content Search (`search_youtube_api`)**: Using the extracted keywords, this step queries the YouTube API to search for video clips that match the script's content for each timestamp section.
+
+8.  **Video Understanding Agent (`understand_youtube_videos`)**: The YouTube video URLs from the previous step are passed to this agent. It uses Gemini's video understanding capabilities to analyze the content of these videos, identifying relevant segments and timestamps that align with the script keywords.
+
+9.  **Video Analysis Parser (`parse_video_analysis`)**: This step parses the video understanding results from the previous step into a structured format, extracting individual video segments with their timestamps and content descriptions from the JSON analysis.
+
+10. **Final Structure Organizer (`generate_final_structure`)**: This is the final step in the workflow. This agent takes the script, extracted keywords, and analyzed video clips to organize them into a comprehensive, structured video plan. The plan includes visual elements, timing, and source information, then returns it to the frontend as a JSON object to be displayed as an interactive storyboard.
 
 ### Key Modules
 
