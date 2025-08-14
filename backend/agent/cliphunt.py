@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Union, Dict
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.graph import StateGraph, END
 from tavily import TavilyClient
@@ -15,7 +15,7 @@ from googleapiclient.discovery import build
 
 load_dotenv()
 # LLM
-llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
 
 # Tavily client
 tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
@@ -107,8 +107,11 @@ class VideoScript(BaseModel):
 
 
 class TimestampKeywords(BaseModel):
-    timestamp: str = Field(
-        description="The timestamp from the script (e.g., '[0-5 seconds]')."
+    start: str = Field(
+        description="Start time (MM:SS) parsed from the script line's time range."
+    )
+    end: str = Field(
+        description="End time (MM:SS) parsed from the script line's time range."
     )
     content_line: str = Field(
         description="The full content line for this timestamp."
@@ -128,8 +131,11 @@ class ContentSearchResult(BaseModel):
     title: str = Field(
         description="Title or description of the found content."
     )
-    timestamp: str = Field(
-        description="The timestamp this search corresponds to."
+    start: str = Field(
+        description="Script start time (MM:SS) this search corresponds to."
+    )
+    end: str = Field(
+        description="Script end time (MM:SS) this search corresponds to."
     )
     keywords: List[str] = Field(
         description="List of keywords that were searched together."
@@ -144,13 +150,16 @@ class ContentSearchResult(BaseModel):
 
 class ContentSearchResults(BaseModel):
     search_results: List[ContentSearchResult] = Field(
-        description="List of search results for each timestamp."
+        description="List of search results for each script time range."
     )
 
 
 class VideoUnderstandingResult(BaseModel):
-    timestamp: str = Field(
-        description="The timestamp this analysis corresponds to."
+    start: str = Field(
+        description="Script start time (MM:SS) this analysis corresponds to."
+    )
+    end: str = Field(
+        description="Script end time (MM:SS) this analysis corresponds to."
     )
     keywords: List[str] = Field(
         description="Keywords used for analysis."
@@ -170,17 +179,29 @@ class VideoUnderstandingResult(BaseModel):
 
 
 class VideoSegment(BaseModel):
-    timestamp: str = Field(
-        description="Video timestamp (e.g., '00:07', '00:14')."
+    start: str = Field(
+        description="Start time of the segment in MM:SS format (e.g., '00:07')."
+    )
+    end: str = Field(
+        description="End time of the segment in MM:SS format (e.g., '00:14')."
     )
     content: str = Field(
-        description="Description of what happens at this timestamp."
+        description="Description of what happens during this time range."
+    )
+
+
+class VideoAnalysisLLMOutput(BaseModel):
+    segments: List[VideoSegment] = Field(
+        description="List of video segments with start, end, and content."
     )
 
 
 class ParsedVideoAnalysis(BaseModel):
-    script_timestamp: str = Field(
-        description="The original script timestamp (e.g., '[0-5 seconds]')."
+    script_start: str = Field(
+        description="Script start time (MM:SS) for this analysis."
+    )
+    script_end: str = Field(
+        description="Script end time (MM:SS) for this analysis."
     )
     keywords: List[str] = Field(
         description="Keywords used for analysis."
@@ -189,7 +210,7 @@ class ParsedVideoAnalysis(BaseModel):
         description="The YouTube URL that was analyzed."
     )
     video_segments: List[VideoSegment] = Field(
-        description="Parsed video segments with individual timestamps."
+        description="Parsed video segments with individual start/end ranges."
     )
     processing_time: float = Field(
         description="Time taken to process the video in seconds."
@@ -204,19 +225,19 @@ class ParsedVideoAnalysisResults(BaseModel):
 
 class VideoUnderstandingResults(BaseModel):
     understanding_results: List[VideoUnderstandingResult] = Field(
-        description="List of video understanding results for each timestamp."
+        description="List of video understanding results for each script time range."
     )
 
 
 class VisualElement(BaseModel):
     sub_time_range: str = Field(
-        description="Sub time range for this visual element."
+        description="Sub time range for this visual element (MM:SS-MM:SS)."
     )
     type: str = Field(
         description="Type of visual: 'concept' or 'clip'."
     )
-    source: Optional[str] = Field(
-        description="Source information including platform, url, and time_range, or null for concept visuals."
+    source: Optional[Union[str, Dict[str, str]]] = Field(
+        description="Either null (for concept), a URL string, or an object {platform, url, time_range}."
     )
     description: str = Field(
         description="Description of the visual content."
@@ -285,11 +306,11 @@ class GeneratedIdeatorState(TypedDict):
 ideator_instructions="""
 You are tasked with creating a set of AI ideator personas. Each ideator should be an expert in short-form video creation, with the following core responsibilities:
 
-核心職責 (Core Responsibilities):
-- 分析市場趨勢、受眾喜好和熱門話題 (Analyze market trends, audience preferences, and popular topics).
-- 從大量數據中提煉出新穎的影片題材、故事線索或概念 (Extract novel video subjects, storylines, or concepts from large amounts of data).
-- 根據客戶需求或目標，生成多個創意方向或提案大綱 (Generate multiple creative directions or proposal outlines based on client requirements or goals).
-- 對既有概念進行迭代和優化，找出潛在亮點 (Iterate and optimize existing concepts to identify potential highlights).
+Core Responsibilities:
+- Analyze market trends, audience preferences, and popular topics.
+- Extract novel video subjects, storylines, or concepts from large amounts of data.
+- Generate multiple creative directions or proposal outlines based on client requirements or goals.
+- Iterate and optimize existing concepts to identify potential highlights.
 
 Follow these instructions to generate the personas:
 1. First, review the research topic:
@@ -461,6 +482,7 @@ def create_ideators(state: GeneratedIdeatorState):
     topic = state['topic']
     max_ideators = state['max_ideators']
     
+    
     # Enforce structured output
     structured_llm = llm.with_structured_output(Perspectives)
 
@@ -479,6 +501,7 @@ def conduct_research(state: GeneratedIdeatorState):
     ideators = state['ideators']
     topic = state['topic']
     research_results = []
+    
     
     # Structured LLM for generating search queries
     query_llm = llm.with_structured_output(SearchQuery)
@@ -535,6 +558,7 @@ def conduct_research(state: GeneratedIdeatorState):
 def create_scriptor(state: GeneratedIdeatorState):
     """Create a specialized scriptor for writing the video script"""
     topic = state['topic']
+    
         
     # Enforce structured output
     structured_llm = llm.with_structured_output(Scriptor)
@@ -556,6 +580,7 @@ def create_script(state: GeneratedIdeatorState):
     topic = state['topic']
     research_results = state['research_results']
     scriptor = state['scriptor']
+    
     
     # Summarize all research insights
     research_summary = ""
@@ -608,6 +633,7 @@ def extract_keywords(state: GeneratedIdeatorState):
     """Extract keywords from each timestamped line in the video script's main content"""
     final_script = state['final_script']
     topic = state['topic']
+    
     
     # Parse the main_content to find timestamped lines
     main_content = final_script.main_content
@@ -667,9 +693,10 @@ Timestamped Lines to Analyze:
 
 
 def search_youtube_api(state: GeneratedIdeatorState):
-    """Search for content using YouTube API with extracted keywords by timestamp structure"""
+    """Search for content using YouTube API with extracted keywords by script time ranges"""
     keyword_extraction = state['keyword_extraction']
     topic = state['topic']
+    
     
     if not youtube:
         return {"content_search_results": ContentSearchResults(search_results=[])}
@@ -678,20 +705,22 @@ def search_youtube_api(state: GeneratedIdeatorState):
     
     # Process each timestamp separately
     for timestamp_keyword in keyword_extraction.timestamp_keywords:
-        timestamp = timestamp_keyword.timestamp
+        start = timestamp_keyword.start
+        end = timestamp_keyword.end
         keywords = timestamp_keyword.keywords
         
         # Combine keywords for search
         search_query = " ".join(keywords) + " " + topic
                 
         try:
-            # Search YouTube using the API
+            # Search YouTube using the API with duration filter for videos under 10 minutes
             search_response = youtube.search().list(
                 q=search_query,
                 part='id,snippet',
                 maxResults=5,
                 type='video',
-                order='relevance'
+                order='relevance',
+                videoDuration='short'  # short: less than 4 minutes
             ).execute()
             
             video_links = []
@@ -706,12 +735,13 @@ def search_youtube_api(state: GeneratedIdeatorState):
                 video_titles.append(video_title)
             
             # Create a descriptive title
-            content_title = f"YouTube API results for {timestamp} - Found {len(video_links)} videos"
+            content_title = f"YouTube API results for {start}-{end} - Found {len(video_links)} videos"
             
             # Create search result
             search_result = ContentSearchResult(
                 title=content_title,
-                timestamp=timestamp,
+                start=start,
+                end=end,
                 keywords=keywords,
                 search_query=search_query,
                 links=video_links
@@ -721,8 +751,9 @@ def search_youtube_api(state: GeneratedIdeatorState):
             
         except Exception as e:            # Create a fallback result even if search fails
             search_result = ContentSearchResult(
-                title=f"YouTube API search failed for {timestamp}",
-                timestamp=timestamp,
+                title=f"YouTube API search failed for {start}-{end}",
+                start=start,
+                end=end,
                 keywords=keywords,
                 search_query=search_query,
                 links=[]
@@ -738,71 +769,74 @@ def understand_youtube_videos(state: GeneratedIdeatorState):
     content_search_results = state['content_search_results']
     topic = state['topic']
     
+    
     understanding_results = []
     
-    # Process only the FIRST search result
-    if content_search_results.search_results:
-        search_result = content_search_results.search_results[0]  # Only first result
-        timestamp = search_result.timestamp
+    # Process all search results, analyzing only the first video link of each
+    for search_result in content_search_results.search_results:
+        start = search_result.start
+        end = search_result.end
         keywords = search_result.keywords
         
         # Get the first YouTube URL for analysis
-        youtube_url = None
-        if search_result.links:
-            youtube_url = search_result.links[0] # Only first video
+        youtube_url = search_result.links[0] if search_result.links else None
         
         if not youtube_url:
-            print(f"No YouTube URL found for timestamp {timestamp}, skipping...")
-        else:            
-            try:
-                import time
-                start_time = time.time()
-                
-                # Create analysis query based on keywords and topic
-                keywords_text = ", ".join(keywords)
+            print(f"No YouTube URL found for script range {start}-{end}, skipping...")
+            continue
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            # Create analysis query based on keywords and topic
+            keywords_text = ", ".join(keywords)
 
-                analysis_query = f"Please analyze this video for segments related to '{keywords_text}' and '{topic}'. Identify all timestamps where these keywords are mentioned, providing the time in minutes and seconds, along with a brief description of the content within that segment. Please return the information in JSON format, including the timestamp and content description."
-                
-                # Use Gemini's understanding API
-                response = gemini_client.models.generate_content(
-                    model='models/gemini-2.5-flash',
-                    contents=types.Content(
-                        parts=[
-                            types.Part(
-                                file_data=types.FileData(file_uri=youtube_url),
-                            ),
-                            types.Part(text=analysis_query)
-                        ]
-                    )
+            analysis_query = f"Please analyze this video for segments related to '{keywords_text}' and '{topic}'. Identify all moments where these keywords are mentioned, providing precise start and end times in MM:SS format, along with a brief description of the content within that time range. Return JSON with an array of objects: {{start, end, content}}."
+            
+            # Use Gemini's understanding API
+            response = gemini_client.models.generate_content(
+                model='models/gemini-2.5-flash',
+                contents=types.Content(
+                    parts=[
+                        types.Part(
+                            file_data=types.FileData(file_uri=youtube_url),
+                        ),
+                        types.Part(text=analysis_query)
+                    ]
                 )
-                
-                end_time = time.time()
-                processing_time = end_time - start_time
-                
-                analysis_result = response.text
-                                
-                # Create understanding result
-                understanding_result = VideoUnderstandingResult(
-                    timestamp=timestamp,
-                    keywords=keywords,
-                    youtube_url=youtube_url,
-                    analysis_query=analysis_query,
-                    analysis_result=analysis_result,
-                    processing_time=processing_time
-                )
-                
-                understanding_results.append(understanding_result)
-                
-            except Exception as e:                # Create a fallback result even if analysis fails
-                understanding_result = VideoUnderstandingResult(
-                    timestamp=timestamp,
-                    keywords=keywords,
-                    youtube_url=youtube_url or "No URL available",
-                    analysis_query=analysis_query if 'analysis_query' in locals() else "Query not generated",
-                    analysis_result=f"Analysis failed: {str(e)}",
-                    processing_time=0.0
-                )
-                understanding_results.append(understanding_result)
+            )
+
+            end_time = time.time()
+            processing_time = end_time - start_time
+
+            # Keep downstream format: JSON text that parse_video_analysis can consume
+            analysis_result = response.text
+                            
+            # Create understanding result
+            understanding_result = VideoUnderstandingResult(
+                start=start,
+                end=end,
+                keywords=keywords,
+                youtube_url=youtube_url,
+                analysis_query=analysis_query,
+                analysis_result=analysis_result,
+                processing_time=processing_time
+            )
+            
+            understanding_results.append(understanding_result)
+            
+        except Exception as e:                # Create a fallback result even if analysis fails
+            understanding_result = VideoUnderstandingResult(
+                start=start,
+                end=end,
+                keywords=keywords,
+                youtube_url=youtube_url or "No URL available",
+                analysis_query=analysis_query if 'analysis_query' in locals() else "Query not generated",
+                analysis_result=f"Analysis failed: {str(e)}",
+                processing_time=0.0
+            )
+            understanding_results.append(understanding_result)
     
     video_understanding_results = VideoUnderstandingResults(understanding_results=understanding_results)    
     return {"video_understanding_results": video_understanding_results}
@@ -812,6 +846,7 @@ def parse_video_analysis(state: GeneratedIdeatorState):
     """Parse video understanding results to extract individual video segments with timestamps"""
     video_understanding_results = state['video_understanding_results']
     parsed_results = []
+    
     
     for understanding_result in video_understanding_results.understanding_results:
         try:
@@ -846,16 +881,49 @@ def parse_video_analysis(state: GeneratedIdeatorState):
             video_segments = []
             if isinstance(analysis_data, list):
                 for segment_data in analysis_data:
-                    if 'timestamp' in segment_data and 'content' in segment_data:
+                    if all(k in segment_data for k in ('start', 'end', 'content')):
                         video_segment = VideoSegment(
-                            timestamp=segment_data['timestamp'],
+                            start=segment_data['start'],
+                            end=segment_data['end'],
                             content=segment_data['content']
                         )
                         video_segments.append(video_segment)
+
+            # Keep only the top 3 most related segments based on keyword matches
+            if video_segments:
+                keywords_lower = [k.lower() for k in understanding_result.keywords]
+
+                def segment_score(segment: VideoSegment) -> int:
+                    content_lower = segment.content.lower()
+                    return sum(content_lower.count(keyword) for keyword in keywords_lower)
+
+                # Stable sort by score descending and take top 3
+                video_segments = sorted(
+                    video_segments,
+                    key=segment_score,
+                    reverse=True
+                )[:3]
+
+                # Then sort the retained segments by start time ascending (MM:SS or HH:MM:SS)
+                def to_seconds(time_str: str) -> int:
+                    try:
+                        parts = [int(p) for p in time_str.split(":")]
+                        if len(parts) == 2:
+                            minutes, seconds = parts
+                            return minutes * 60 + seconds
+                        if len(parts) == 3:
+                            hours, minutes, seconds = parts
+                            return hours * 3600 + minutes * 60 + seconds
+                        return 0
+                    except Exception:
+                        return 0
+
+                video_segments = sorted(video_segments, key=lambda seg: to_seconds(seg.start))
             
             # Create parsed analysis
             parsed_analysis = ParsedVideoAnalysis(
-                script_timestamp=understanding_result.timestamp,
+                script_start=understanding_result.start,
+                script_end=understanding_result.end,
                 keywords=understanding_result.keywords,
                 youtube_url=understanding_result.youtube_url,
                 video_segments=video_segments,
@@ -867,7 +935,8 @@ def parse_video_analysis(state: GeneratedIdeatorState):
         except json.JSONDecodeError as e:
             # Create a fallback with no segments
             parsed_analysis = ParsedVideoAnalysis(
-                script_timestamp=understanding_result.timestamp,
+                script_start=understanding_result.start,
+                script_end=understanding_result.end,
                 keywords=understanding_result.keywords,
                 youtube_url=understanding_result.youtube_url,
                 video_segments=[],
@@ -877,7 +946,8 @@ def parse_video_analysis(state: GeneratedIdeatorState):
         
         except Exception as e:            # Create a fallback with no segments
             parsed_analysis = ParsedVideoAnalysis(
-                script_timestamp=understanding_result.timestamp,
+                script_start=understanding_result.start,
+                script_end=understanding_result.end,
                 keywords=understanding_result.keywords,
                 youtube_url=understanding_result.youtube_url,
                 video_segments=[],
@@ -897,13 +967,15 @@ def generate_final_structure(state: GeneratedIdeatorState):
     content_search_results = state['content_search_results']
     parsed_video_analysis = state['parsed_video_analysis']
     topic = state['topic']
+    
         
     # Create segments based on actual data
     segments = []
     
     # Process each timestamp from keyword extraction
     for i, timestamp_keyword in enumerate(keyword_extraction.timestamp_keywords):
-        timestamp = timestamp_keyword.timestamp
+        start = timestamp_keyword.start
+        end = timestamp_keyword.end
         keywords = timestamp_keyword.keywords
         content_line = timestamp_keyword.content_line
         
@@ -915,10 +987,10 @@ def generate_final_structure(state: GeneratedIdeatorState):
         # Create visual elements
         visual_elements = []
         
-        # Find corresponding parsed video analysis for this script timestamp
+        # Find corresponding parsed video analysis for this script time range
         matching_parsed_analysis = None
         for parsed_analysis in parsed_video_analysis.parsed_results:
-            if parsed_analysis.script_timestamp == timestamp:
+            if parsed_analysis.script_start == start and parsed_analysis.script_end == end:
                 matching_parsed_analysis = parsed_analysis
                 break
         
@@ -926,9 +998,13 @@ def generate_final_structure(state: GeneratedIdeatorState):
         if matching_parsed_analysis and matching_parsed_analysis.video_segments:
             for video_segment in matching_parsed_analysis.video_segments:
                 visual_element = VisualElement(
-                    sub_time_range=video_segment.timestamp,  # Use the actual video timestamp
+                    sub_time_range=f"{video_segment.start}-{video_segment.end}",
                     type="clip",
-                    source=matching_parsed_analysis.youtube_url,
+                    source={
+                        "platform": "youtube",
+                        "url": matching_parsed_analysis.youtube_url,
+                        "time_range": f"{video_segment.start} - {video_segment.end}",
+                    },
                     description=video_segment.content
                 )
                 visual_elements.append(visual_element)
@@ -936,7 +1012,7 @@ def generate_final_structure(state: GeneratedIdeatorState):
         # If no video analysis results, create a concept visual
         if not visual_elements:
             visual_element = VisualElement(
-                sub_time_range=timestamp,
+                sub_time_range=f"{start}-{end}",
                 type="concept",
                 source=None,
                 description=f"Visual concept for: {content_line}"
@@ -945,7 +1021,7 @@ def generate_final_structure(state: GeneratedIdeatorState):
         
         # Create segment
         segment = Segment(
-            time_range=timestamp,
+            time_range=f"{start}-{end}",
             title=f"Segment: {', '.join(keywords)}",
             visual=visual_elements,
             audio="Background music and narration"
