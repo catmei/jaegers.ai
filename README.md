@@ -244,7 +244,7 @@ Generate a video structure from a topic via the LangGraph dev server (with LangS
 ```json
 {
   "topic": "your topic here",
-  "max_ideators": 1  // optional, defaults to 1
+  "max_ideators": 3  // optional, defaults to 3
 }
 ```
 

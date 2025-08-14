@@ -16,7 +16,7 @@ def generate_video():
             return jsonify({'error': 'Topic is required in request body'}), 400
         
         topic = data['topic']
-        max_ideators = data.get('max_ideators', 1)  # Default to 1
+        max_ideators = data.get('max_ideators', 3)  # Default to 3
         
         print(f"🎬 Processing topic: {topic}")
         print(f"📊 Max ideators: {max_ideators}")

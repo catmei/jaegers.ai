@@ -1069,4 +1069,4 @@ workflow.add_edge("generate_final_structure", END)
 # Compile
 graph = workflow.compile()
 
-# Reference Input: initial_state = {"topic": "lebron james and the lakers", "max_ideators": 1}
+# Reference Input: initial_state = {"topic": "lebron james and the lakers", "max_ideators": 3}
